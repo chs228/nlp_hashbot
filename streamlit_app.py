@@ -660,4 +660,4 @@ elif st.session_state.current_step == 3:
         
 # Inside the export_tab2 section, replace the existing code with this:
             with export_tab2:
-                export_results_to_email(avg_score,rating,skills,questions,date)
+                export_results_to_email(avg_score,rating,st.session_state.skills,questions,date)
