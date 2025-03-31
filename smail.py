@@ -169,7 +169,7 @@ def export_results_to_email(avg_score,rating,st.session_state.skills,st.session_
 Technical Interview Results Summary
 
 Date: {st.session_state.interview_date}
-Overall Score: {avg_score:.1f}/100
+Overall Score: {avg_score}/100
 Rating: {rating}
 
 The complete interview results are attached as a PDF.
