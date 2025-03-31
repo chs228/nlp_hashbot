@@ -24,76 +24,6 @@ try:
     import docx
 except ImportError:
     st.error("python-docx is not installed. Please install it with: pip install python-docx")
-def generate_pdf_from_markdown(markdown_text):
-    """Convert markdown to PDF using pdfkit."""
-    try:
-        # Convert markdown to HTML
-        html = markdown.markdown(markdown_text)
-        
-        # Add basic styling
-        styled_html = f"""
-        <html>
-        <head>
-            <style>
-                body {{ font-family: Arial, sans-serif; margin: 40px; }}
-                h1 {{ color: #2C3E50; }}
-                h2 {{ color: #3498DB; margin-top: 20px; }}
-                h3 {{ color: #16A085; }}
-                .score {{ font-weight: bold; }}
-                hr {{ border: 1px solid #eee; }}
-            </style>
-        </head>
-        <body>
-            {html}
-        </body>
-        </html>
-        """
-        
-        # Convert HTML to PDF
-        pdf = pdfkit.from_string(styled_html, False)
-        return pdf
-    except Exception as e:
-        st.error(f"Error generating PDF: {str(e)}")
-        st.info("Make sure you have wkhtmltopdf installed: https://wkhtmltopdf.org/downloads.html")
-        return None
-
-def send_email(recipient_email, subject, body_text, attachment=None, attachment_name=None):
-    """Send an email with optional attachment."""
-    try:
-        # Get email credentials from environment variables or secrets
-        smtp_server = os.environ.get("SMTP_SERVER", st.secrets.get("SMTP_SERVER", "smtp.gmail.com"))
-        smtp_port = int(os.environ.get("SMTP_PORT", st.secrets.get("SMTP_PORT", "587")))
-        sender_email = os.environ.get("SENDER_EMAIL", st.secrets.get("SENDER_EMAIL", ""))
-        sender_password = os.environ.get("SENDER_PASSWORD", st.secrets.get("SENDER_PASSWORD", ""))
-        
-        if not sender_email or not sender_password:
-            return False, "Email credentials not configured. Please check settings."
-        
-        # Create message
-        msg = MIMEMultipart()
-        msg['From'] = sender_email
-        msg['To'] = recipient_email
-        msg['Subject'] = subject
-        
-        # Attach text body
-        msg.attach(MIMEText(body_text, 'plain'))
-        
-        # Attach PDF if provided
-        if attachment and attachment_name:
-            attachment_part = MIMEApplication(attachment, Name=attachment_name)
-            attachment_part['Content-Disposition'] = f'attachment; filename="{attachment_name}"'
-            msg.attach(attachment_part)
-        
-        # Connect to server and send
-        with smtplib.SMTP(smtp_server, smtp_port) as server:
-            server.starttls()
-            server.login(sender_email, sender_password)
-            server.send_message(msg)
-        
-        return True, "Email sent successfully!"
-    
-    except Exception as e:
-        return False, f"Failed to send email: {str(e)}"
 
 # Define skills dictionary
 COMMON_SKILLS = {
@@ -727,106 +657,78 @@ elif st.session_state.current_step == 3:
                     json_str = json.dumps(export_data, indent=2)
                     st.markdown(get_download_link(json_str, "interview_results.json", "Download as JSON"), unsafe_allow_html=True)
         
-        with export_tab2:
-            st.info("Send the interview results as a PDF via email")
-            
-            # Input for email settings
-            with st.expander("Email Configuration"):
-                st.markdown("""
-                To send emails, you'll need to configure SMTP settings. For Gmail:
-                1. Enable 2-factor authentication on your Google account
-                2. Create an [App Password](https://myaccount.google.com/apppasswords)
-                3. Use that password below
-                """)
+# Inside the export_tab2 section, replace the existing code with this:
+            with export_tab2:
+                st.info("Send the interview results as a PDF via email")
                 
-                # smtp_server = st.text_input("SMTP Server", "smtp.gmail.com")
-                # smtp_port = st.number_input("SMTP Port", value=587)
-                # sender_email = st.text_input("Sender Email")
-                # sender_password = st.text_input("Sender Password", type="password")
-                sender_email = "projecttestingsubhash@gmail.com"
-                sender_password = "zgwynxksfnwzusyk"
-
-                if st.button("Save SMTP Settings"):
-                    os.environ["SMTP_SERVER"] = smtp_server
-                    os.environ["SMTP_PORT"] = 587
-                    os.environ["SENDER_EMAIL"] = sender_email
-                    os.environ["SENDER_PASSWORD"] = sender_password
-                    st.success("Email settings saved for this session")
+                recipient_email = st.text_input("Recipient Email")
+                email_subject = st.text_input("Email Subject", f"Technical Interview Results - {st.session_state.interview_date}")
+                
+                if st.button("Send Results via Email"):
+                    if recipient_email:
+                        # Generate plain text for the PDF (no HTML)
+                        export_text = f"""
+            TECHNICAL INTERVIEW RESULTS
+            ==========================
+            Date: {st.session_state.interview_date}
+            Overall Score: {avg_score:.1f}/100
+            Rating: {rating}
             
-            recipient_email = st.text_input("Recipient Email")
-            email_subject = st.text_input("Email Subject", f"Technical Interview Results - {st.session_state.interview_date}")
+            EXTRACTED SKILLS
+            --------------
+            """
+                        # Add skills section
+                        for category, skill_list in st.session_state.skills.items():
+                            export_text += f"\n{category.capitalize()}: "
+                            export_text += ", ".join(skill_list)
+                        
+                        export_text += "\n\nINTERVIEW QUESTIONS AND EVALUATIONS\n"
+                        
+                        # Add each question and evaluation
+                        for i, q in enumerate(st.session_state.questions):
+                            if q['question'] in st.session_state.evaluations:
+                                data = st.session_state.evaluations[q['question']]
+                                evaluation = data["evaluation"]
+                                export_text += f"\n\nQuestion {i+1}: {q['question']}\n"
+                                export_text += f"Answer: {data['answer']}\n"
+                                export_text += f"Score: {evaluation.get('score', 'N/A')}/100\n"
+                                export_text += f"Feedback: {evaluation.get('feedback', 'No feedback available')}\n"
+                                
+                                missing = evaluation.get('missing_concepts', [])
+                                if missing:
+                                    export_text += "Missing concepts: "
+                                    export_text += ", ".join(missing)
+                                export_text += "\n-----------------------"
+                        
+                        # Generate PDF
+                        pdf_data = generate_pdf_from_markdown(export_text)
+                        
+                        if pdf_data:
+                            # Simple email body
+                            email_body = f"""
+            Technical Interview Results Summary
             
-            if st.button("Send Results via Email"):
-                if recipient_email:
-                    # Generate markdown for the email
-                    export_text = "# Technical Interview Results\n\n"
-                    export_text += f"Date: {st.session_state.interview_date}\n"
-                    export_text += f"Overall Score: {avg_score:.1f}/100\n"
-                    export_text += f"Rating: {rating}\n\n"
-                    
-                    export_text += "## Extracted Skills\n"
-                    for category, skill_list in st.session_state.skills.items():
-                        export_text += f"### {category.capitalize()}\n"
-                        export_text += ", ".join(skill_list) + "\n\n"
-                    
-                    export_text += "## Interview Questions and Evaluations\n\n"
-                    for i, q in enumerate(st.session_state.questions):
-                        if q['question'] in st.session_state.evaluations:
-                            data = st.session_state.evaluations[q['question']]
-                            evaluation = data["evaluation"]
-                            export_text += f"### Question {i+1}: {q['question']}\n"
-                            export_text += f"**Answer:** {data['answer']}\n\n"
-                            export_text += f"**Score:** {evaluation.get('score', 'N/A')}/100\n"
-                            export_text += f"**Feedback:** {evaluation.get('feedback', 'No feedback available')}\n"
+            Date: {st.session_state.interview_date}
+            Overall Score: {avg_score:.1f}/100
+            Rating: {rating}
+            
+            The complete interview results are attached as a PDF.
+            """
                             
-                            missing = evaluation.get('missing_concepts', [])
-                            if missing:
-                                export_text += "**Missing concepts:**\n"
-                                for concept in missing:
-                                    export_text += f"- {concept}\n"
-                            export_text += "\n---\n\n"
-                    
-                    # Generate PDF
-                    pdf_data = generate_pdf_from_markdown(export_text)
-                    
-                    if pdf_data:
-                        # Simple email body
-                        email_body = f"""
-                        Technical Interview Results
-        
-                        Date: {st.session_state.interview_date}
-                        Overall Score: {avg_score:.1f}/100
-                        Rating: {rating}
-        
-                        The complete interview results are attached as a PDF.
-                        """
-                        
-                        # Send email with PDF attachment
-                        success, message = send_email(
-                            recipient_email, 
-                            email_subject, 
-                            email_body,
-                            pdf_data,
-                            "interview_results.pdf"
-                        )
-                        
-                        if success:
-                            st.success(message)
+                            # Send email with PDF attachment
+                            success, message = send_email(
+                                recipient_email, 
+                                email_subject, 
+                                email_body,
+                                pdf_data,
+                                "interview_results.pdf"
+                            )
+                            
+                            if success:
+                                st.success(message)
+                            else:
+                                st.error(message)
                         else:
-                            st.error(message)
+                            st.error("Failed to generate PDF. Please check that wkhtmltopdf is installed.")
                     else:
-                        st.error("Failed to generate PDF. Please check that wkhtmltopdf is installed.")
-                else:
-                    st.error("Please enter a recipient email address")
-        
-        # Add this to the sidebar
-        with st.sidebar:
-            with st.expander("Email Configuration"):
-                st.subheader("Email Configuration")
-                st.code("""
-                # Add these to your environment variables or secrets:
-                SMTP_SERVER=smtp.gmail.com
-                SMTP_PORT=587
-                SENDER_EMAIL=your-email@gmail.com
-                SENDER_PASSWORD=your-app-password
-                """)
+                        st.error("Please enter a recipient email address")
