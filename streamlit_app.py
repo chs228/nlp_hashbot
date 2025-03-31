@@ -7,13 +7,7 @@ import requests
 import os
 import random
 from datetime import datetime
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.application import MIMEApplication
-import markdown
-import pdfkit
-from smail import export_results_to_email
+
 # For PDF and DOCX processing
 try:
     import PyPDF2
@@ -25,6 +19,12 @@ try:
 except ImportError:
     st.error("python-docx is not installed. Please install it with: pip install python-docx")
 
+# For email and PDF generation
+from fpdf import FPDF
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
 
 # Define skills dictionary
 COMMON_SKILLS = {
@@ -105,12 +105,10 @@ def validate_answer_with_gemini(question, answer, expected_keywords):
     """
     Use Google's Gemini API to validate a candidate's answer.
     """
-    # Replace with your Gemini API key or use from environment variables
-    api_key = os.environ.get("GEMINI_API_KEY", st.secrets.get("AIzaSyCx70_PG_V6tkCsarNnIP9qs_fl5THZIMI", ""))
+    api_key = os.environ.get("GEMINI_API_KEY", st.secrets.get("GEMINI_API_KEY", ""))
     
     if not api_key:
         st.warning("Gemini API key not found. Validation will be simulated.")
-        # Simulate validation
         keyword_count = sum(1 for keyword in expected_keywords if keyword.lower() in answer.lower())
         score = min(keyword_count / len(expected_keywords), 1.0) * 100
         return {
@@ -119,10 +117,8 @@ def validate_answer_with_gemini(question, answer, expected_keywords):
             "missing_concepts": [k for k in expected_keywords if k.lower() not in answer.lower()]
         }
     
-    # Gemini API endpoint
     url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
     
-    # Construct the prompt for Gemini
     prompt = f"""
     Question: {question}
     
@@ -143,7 +139,6 @@ def validate_answer_with_gemini(question, answer, expected_keywords):
     Format as JSON with keys: "score", "feedback", "missing_concepts"
     """
     
-    # Make API request
     headers = {
         "Content-Type": "application/json",
         "x-goog-api-key": api_key
@@ -161,11 +156,9 @@ def validate_answer_with_gemini(question, answer, expected_keywords):
         response = requests.post(url, headers=headers, json=data)
         response.raise_for_status()
         
-        # Parse Gemini's response
         response_data = response.json()
         generated_text = response_data["candidates"][0]["content"]["parts"][0]["text"]
         
-        # Extract JSON from the response
         json_str = ""
         json_started = False
         
@@ -181,31 +174,23 @@ def validate_answer_with_gemini(question, answer, expected_keywords):
         if not json_str:
             json_str = generated_text
         
+        json_str = json_str.replace("```json", "").replace("```", "").strip()
+        
         try:
-            # Clean the JSON string - remove markdown code block markers if present
-            json_str = json_str.replace("```json", "").replace("```", "").strip()
-            
-            # Try to parse the JSON
             result = json.loads(json_str)
-            
-            # Ensure all required fields are present
             if "score" not in result:
-                result["score"] = 50  # Default score
+                result["score"] = 50
             if "feedback" not in result:
                 result["feedback"] = "No specific feedback provided."
             if "missing_concepts" not in result:
                 result["missing_concepts"] = []
-                
             return result
-            
         except json.JSONDecodeError:
-            # If we can't parse JSON, create a default response
             return {
                 "score": 50,
                 "feedback": "Unable to parse evaluation. The answer may be incomplete or unclear.",
                 "missing_concepts": ["Unable to determine"]
             }
-    
     except Exception as e:
         st.error(f"Error calling Gemini API: {str(e)}")
         return {
@@ -216,7 +201,6 @@ def validate_answer_with_gemini(question, answer, expected_keywords):
 
 # File processing functions
 def extract_text_from_pdf(pdf_file):
-    """Extract text from a PDF file using a more robust approach."""
     try:
         pdf_reader = PyPDF2.PdfReader(pdf_file)
         text = ""
@@ -228,7 +212,6 @@ def extract_text_from_pdf(pdf_file):
         return ""
 
 def extract_text_from_docx(docx_file):
-    """Extract text from a DOCX file with error handling."""
     try:
         doc = docx.Document(docx_file)
         text = ""
@@ -240,7 +223,6 @@ def extract_text_from_docx(docx_file):
         return ""
 
 def extract_skills(text):
-    """Extract skills from text based on predefined skill lists."""
     if not text:
         return {}
     
@@ -249,49 +231,36 @@ def extract_skills(text):
     
     for category, skill_list in COMMON_SKILLS.items():
         found_skills = []
-        
         for skill in skill_list:
-            # Simple pattern matching - find the skill as a whole word
             pattern = r'\b' + re.escape(skill) + r'\b'
             if re.search(pattern, text):
                 found_skills.append(skill)
-                
         if found_skills:
             identified_skills[category] = found_skills
     
-    return identified_skills
+    return identified_skill
 
 def generate_technical_questions(skills, max_questions=7):
-    """Generate specific technical questions based on identified skills, limited to max_questions."""
     all_possible_questions = []
     
-    # Flatten the skills into a list
     all_skills = []
     for category, skill_list in skills.items():
         all_skills.extend(skill_list)
     
-    # Prioritize the most important skills by sorting frequency
     skill_frequency = {}
     for skill in all_skills:
-        if skill in skill_frequency:
-            skill_frequency[skill] += 1
-        else:
-            skill_frequency[skill] = 1
+        skill_frequency[skill] = skill_frequency.get(skill, 0) + 1
     
-    # Sort skills by frequency (most frequent first)
     sorted_skills = sorted(skill_frequency.keys(), key=lambda x: skill_frequency[x], reverse=True)
     
-    # Get technical questions for each skill
     for skill in sorted_skills:
         if skill in TECHNICAL_QUESTIONS:
             all_possible_questions.extend(TECHNICAL_QUESTIONS[skill])
     
-    # If we have too few questions, add generic questions
     if len(all_possible_questions) < max_questions:
         random.shuffle(GENERIC_QUESTIONS)
         all_possible_questions.extend(GENERIC_QUESTIONS)
     
-    # Ensure uniqueness by question text
     unique_questions = []
     question_texts = set()
     
@@ -302,7 +271,6 @@ def generate_technical_questions(skills, max_questions=7):
             if len(unique_questions) >= max_questions:
                 break
     
-    # If we still don't have enough questions, add generic ones
     if len(unique_questions) < max_questions:
         for q in GENERIC_QUESTIONS:
             if q["question"] not in question_texts:
@@ -311,11 +279,9 @@ def generate_technical_questions(skills, max_questions=7):
                 if len(unique_questions) >= max_questions:
                     break
     
-    # Limit to max_questions
     return unique_questions[:max_questions]
 
 def get_download_link(text, filename, label="Download processed text"):
-    """Generate a download link for text file."""
     b64 = base64.b64encode(text.encode()).decode()
     href = f'<a href="data:file/txt;base64,{b64}" download="{filename}">{label}</a>'
     return href
@@ -344,8 +310,8 @@ if "interview_date" not in st.session_state:
     st.session_state.interview_date = datetime.now().strftime("%Y-%m-%d %H:%M")
 if "max_questions" not in st.session_state:
     st.session_state.max_questions = 7
-    
-# Create sidebar for the workflow steps
+
+# Sidebar
 with st.sidebar:
     st.header("Workflow")
     st.write("1. Upload Resume")
@@ -366,7 +332,6 @@ with st.sidebar:
             st.session_state.interview_date = datetime.now().strftime("%Y-%m-%d %H:%M")
             st.rerun()
     
-    # Gemini API configuration
     with st.expander("Gemini API Configuration"):
         api_key = st.text_input("Gemini API Key", 
                                value=os.environ.get("GEMINI_API_KEY", ""), 
@@ -375,7 +340,6 @@ with st.sidebar:
             os.environ["GEMINI_API_KEY"] = api_key
             st.success("API Key saved for this session")
     
-    # Display progress if in interview step
     if st.session_state.current_step == 3 and st.session_state.questions:
         st.subheader("Interview Progress")
         completed = len(st.session_state.evaluations)
@@ -387,31 +351,24 @@ with st.sidebar:
 if st.session_state.current_step == 1:
     st.header("Step 1: Upload Resume")
     uploaded_file = st.file_uploader("Choose a resume file", type=["pdf", "docx", "txt"])
-    
-    # Alternative direct text input
     text_input = st.text_area("Or paste resume text directly:", height=200)
-    
     process_button = st.button("Process Resume")
     
     if process_button:
         if uploaded_file is not None:
-            # Extract text based on file type
             if uploaded_file.name.endswith('.pdf'):
                 resume_text = extract_text_from_pdf(uploaded_file)
             elif uploaded_file.name.endswith('.docx'):
                 resume_text = extract_text_from_docx(uploaded_file)
-            else:  # Assume it's a text file
+            else:
                 resume_text = uploaded_file.getvalue().decode("utf-8", errors="replace")
-            
             st.session_state.resume_text = resume_text
             st.session_state.current_step = 2
             st.rerun()
-            
         elif text_input:
             st.session_state.resume_text = text_input
             st.session_state.current_step = 2
             st.rerun()
-            
         else:
             st.error("Please upload a file or paste text to continue.")
 
@@ -419,18 +376,15 @@ if st.session_state.current_step == 1:
 elif st.session_state.current_step == 2:
     st.header("Step 2: Extract Skills")
     
-    # Display a snippet of the resume
     with st.expander("Resume Text Preview"):
         st.text_area("Resume content:", 
                     value=st.session_state.resume_text[:500] + "..." if len(st.session_state.resume_text) > 500 else st.session_state.resume_text,
                     height=150,
                     disabled=True)
     
-    # Extract skills
     skills = extract_skills(st.session_state.resume_text)
     st.session_state.skills = skills
     
-    # Display extracted skills
     if skills:
         st.subheader("Identified Skills")
         for category, skill_list in skills.items():
@@ -439,14 +393,12 @@ elif st.session_state.current_step == 2:
     else:
         st.warning("No specific skills were identified. Please add skills manually.")
     
-    # Manual skill entry
     col1, col2 = st.columns(2)
     
     with col1:
         st.subheader("Add Additional Skills")
         new_skill = st.text_input("Enter a skill that's missing:")
         skill_category = st.selectbox("Category:", list(COMMON_SKILLS.keys()))
-        
         if st.button("Add Skill") and new_skill:
             if skill_category in st.session_state.skills:
                 if new_skill not in st.session_state.skills[skill_category]:
@@ -458,20 +410,16 @@ elif st.session_state.current_step == 2:
     with col2:
         st.subheader("Interview Settings")
         st.info(f"Maximum {st.session_state.max_questions} questions will be generated")
-        
         st.markdown("""
         The system will generate the most relevant technical questions based on the identified skills.
         Focus will be given to the most prominent skills in the resume.
         """)
     
     if st.button("Start Technical Interview"):
-        # Generate specific technical questions based on skills (max 7)
         technical_questions = generate_technical_questions(st.session_state.skills, st.session_state.max_questions)
         st.session_state.questions = technical_questions
-        
         if technical_questions:
             st.session_state.current_question = technical_questions[0]
-        
         st.session_state.current_step = 3
         st.rerun()
 
@@ -479,7 +427,6 @@ elif st.session_state.current_step == 2:
 elif st.session_state.current_step == 3:
     st.header("Step 3: Technical Interview")
     
-    # Show all questions in the sidebar
     with st.sidebar:
         st.subheader("All Technical Questions")
         for i, q in enumerate(st.session_state.questions):
@@ -488,19 +435,16 @@ elif st.session_state.current_step == 3:
                 st.session_state.current_question = q
                 st.rerun()
     
-    # Main interview area
     col1, col2 = st.columns([3, 2])
     
     with col1:
         st.subheader("Current Question")
-        
         if st.session_state.current_question:
             current_q = st.session_state.current_question
             q_index = st.session_state.questions.index(current_q) + 1
             st.write(f"**Question {q_index} of {len(st.session_state.questions)}:**")
             st.write(f"**{current_q['question']}**")
             
-            # Check if this question has already been answered
             already_answered = current_q['question'] in st.session_state.evaluations
             if already_answered:
                 st.info("You have already answered this question. Your previous answer:")
@@ -508,36 +452,26 @@ elif st.session_state.current_step == 3:
                            value=st.session_state.evaluations[current_q['question']]['answer'],
                            height=150,
                            disabled=True)
-                
                 if st.button("Edit Answer"):
-                    # Remove previous evaluation to allow re-answering
                     del st.session_state.evaluations[current_q['question']]
                     st.rerun()
             else:
-                # Input area for answer
                 answer = st.text_area("Your answer:", height=200)
-                
                 if st.button("Submit Answer for Evaluation"):
                     if answer:
-                        # Validate with Gemini
                         evaluation = validate_answer_with_gemini(
                             question=current_q['question'],
                             answer=answer,
                             expected_keywords=current_q['expected_keywords']
                         )
-                        
-                        # Save the evaluation
                         q_key = current_q['question']
                         st.session_state.evaluations[q_key] = {
                             "answer": answer,
                             "evaluation": evaluation
                         }
-                        
-                        # Move to next question if available
                         current_index = st.session_state.questions.index(current_q)
                         if current_index < len(st.session_state.questions) - 1:
                             st.session_state.current_question = st.session_state.questions[current_index + 1]
-                        
                         st.rerun()
                     else:
                         st.error("Please provide an answer before submitting.")
@@ -546,27 +480,20 @@ elif st.session_state.current_step == 3:
     
     with col2:
         st.subheader("Evaluation Results")
-        
         if st.session_state.evaluations:
-            # Create a list of evaluations sorted by question order
             sorted_evaluations = []
             for q in st.session_state.questions:
                 if q['question'] in st.session_state.evaluations:
                     sorted_evaluations.append((q['question'], st.session_state.evaluations[q['question']]))
             
-            # Display evaluations
             for q, data in sorted_evaluations:
                 q_index = next((i+1 for i, question in enumerate(st.session_state.questions) if question['question'] == q), "")
                 with st.expander(f"Q{q_index}: {q[:40]}..."):
                     evaluation = data["evaluation"]
                     score = evaluation.get('score', 0)
-                    
-                    # Color code score
                     score_color = "#4CAF50" if score >= 80 else "#FFC107" if score >= 60 else "#F44336"
-                    
                     st.markdown(f"<h3 style='color:{score_color}'>Score: {score}/100</h3>", unsafe_allow_html=True)
                     st.write(f"**Feedback:** {evaluation.get('feedback', 'No feedback available')}")
-                    
                     missing = evaluation.get('missing_concepts', [])
                     if missing:
                         st.write("**Missing concepts:**")
@@ -579,85 +506,112 @@ elif st.session_state.current_step == 3:
     if st.session_state.evaluations and len(st.session_state.evaluations) == len(st.session_state.questions):
         st.header("Interview Complete! 🎉")
         
-        # Calculate overall score
         total_score = sum(data["evaluation"].get("score", 0) for data in st.session_state.evaluations.values())
         avg_score = total_score / len(st.session_state.evaluations)
-        
-        # Define score rating
         rating = "Excellent" if avg_score >= 85 else "Good" if avg_score >= 70 else "Average" if avg_score >= 50 else "Needs Improvement"
         
-        # Display summary
-        col1, col2 = st.columns(2)
+        col1, col2 =  st.columns(2)
         with col1:
             st.metric("Overall Technical Score", f"{avg_score:.1f}/100")
         with col2:
             st.metric("Rating", rating)
         
-        # Export option
-        # Export option
         st.markdown("---")
         st.subheader("Export Results")
         
-        export_tab1, export_tab2 = st.tabs(["Download", "Email"])
+        email_address = st.text_input("Enter your email address to receive results:")
+        delivery_method = st.radio("Delivery Method", ["PDF Attachment", "Text Message"])
         
-        with export_tab1:
-            export_format = st.radio("Export Format", ["Markdown", "JSON"])
-            
-            if st.button("Download Interview Results"):
-                if export_format == "Markdown":
-                    export_text = "# Technical Interview Results\n\n"
-                    export_text += f"Date: {st.session_state.interview_date}\n"
-                    export_text += f"Overall Score: {avg_score:.1f}/100\n"
-                    export_text += f"Rating: {rating}\n\n"
+        if st.button("Send Results to Email"):
+            if not email_address:
+                st.error("Please enter a valid email address.")
+            else:
+                export_text = "# Technical Interview Results\n\n"
+                export_text += f"Date: {st.session_state.interview_date}\n"
+                export_text += f"Overall Score: {avg_score:.1f}/100\n"
+                export_text += f"Rating: {rating}\n\n"
+                
+                export_text += "## Extracted Skills\n"
+                for category, skill_list in st.session_state.skills.items():
+                    export_text += f"### {category.capitalize()}\n"
+                    export_text += ", ".join(skill_list) + "\n\n"
+                
+                export_text += "## Interview Questions and Evaluations\n\n"
+                for i, q in enumerate(st.session_state.questions):
+                    if q['question'] in st.session_state.evaluations:
+                        data = st.session_state.evaluations[q['question']]
+                        evaluation = data["evaluation"]
+                        export_text += f"### Question {i+1}: {q['question']}\n"
+                        export_text += f"**Answer:** {data['answer']}\n\n"
+                        export_text += f"**Score:** {evaluation.get('score', 'N/A')}/100\n"
+                        export_text += f"**Feedback:** {evaluation.get('feedback', 'No feedback available')}\n"
+                        missing = evaluation.get('missing_concepts', [])
+                        if missing:
+                            export_text += "**Missing concepts:**\n"
+                            for concept in missing:
+                                export_text += f"- {concept}\n"
+                        export_text += "\n---\n\n"
+                
+                smtp_server = "smtp.gmail.com"
+                smtp_port = 587
+                sender_email = "your-email@gmail.com"  # Replace with your email
+                sender_password = "your-app-password"  # Replace with your App Password
+                
+                msg = MIMEMultipart()
+                msg['From'] = sender_email
+                msg['To'] = email_address
+                msg['Subject'] = "Technical Interview Results"
+                
+                if delivery_method == "PDF Attachment":
+                    pdf = FPDF()
+                    pdf.add_page()
+                    pdf.set_font("Arial", size=12)
+                    for line in export_text.split("\n"):
+                        pdf.cell(0, 10, txt=line.encode('latin-1', 'replace').decode('latin-1'), ln=True)
+                    pdf_output = "interview_results.pdf"
+                    pdf.output(pdf_output)
                     
-                    export_text += "## Extracted Skills\n"
-                    for category, skill_list in st.session_state.skills.items():
-                        export_text += f"### {category.capitalize()}\n"
-                        export_text += ", ".join(skill_list) + "\n\n"
-                    
-                    export_text += "## Interview Questions and Evaluations\n\n"
-                    for i, q in enumerate(st.session_state.questions):
-                        if q['question'] in st.session_state.evaluations:
-                            data = st.session_state.evaluations[q['question']]
-                            evaluation = data["evaluation"]
-                            export_text += f"### Question {i+1}: {q['question']}\n"
-                            export_text += f"**Answer:** {data['answer']}\n\n"
-                            export_text += f"**Score:** {evaluation.get('score', 'N/A')}/100\n"
-                            export_text += f"**Feedback:** {evaluation.get('feedback', 'No feedback available')}\n"
-                            
-                            missing = evaluation.get('missing_concepts', [])
-                            if missing:
-                                export_text += "**Missing concepts:**\n"
-                                for concept in missing:
-                                    export_text += f"- {concept}\n"
-                            export_text += "\n---\n\n"
-                    
-                    st.markdown(get_download_link(export_text, "interview_results.md", "Download as Markdown"), unsafe_allow_html=True)
+                    with open(pdf_output, "rb") as f:
+                        pdf_attachment = MIMEApplication(f.read(), _subtype="pdf")
+                        pdf_attachment.add_header('Content-Disposition', 'attachment', filename=pdf_output)
+                        msg.attach(pdf_attachment)
+                    msg.attach(MIMEText("Please find your interview results attached as a PDF.", 'plain'))
                 else:
-                    # JSON export
-                    export_data = {
-                        "date": st.session_state.interview_date,
-                        "overall_score": avg_score,
-                        "rating": rating,
-                        "skills": st.session_state.skills,
-                        "questions": []
-                    }
-                    
-                    for i, q in enumerate(st.session_state.questions):
-                        if q['question'] in st.session_state.evaluations:
-                            data = st.session_state.evaluations[q['question']]
-                            export_data["questions"].append({
-                                "question_number": i+1,
-                                "question_text": q['question'],
-                                "answer": data['answer'],
-                                "score": data['evaluation'].get('score', 0),
-                                "feedback": data['evaluation'].get('feedback', ''),
-                                "missing_concepts": data['evaluation'].get('missing_concepts', [])
-                            })
-                    
-                    json_str = json.dumps(export_data, indent=2)
-                    st.markdown(get_download_link(json_str, "interview_results.json", "Download as JSON"), unsafe_allow_html=True)
+                    msg.attach(MIMEText(export_text, 'plain'))
+                
+                try:
+                    server = smtplib.SMTP(smtp_server, smtp_port)
+                    server.starttls()
+                    server.login(sender_email, sender_password)
+                    server.send_message(msg)
+                    server.quit()
+                    st.success(f"Results successfully sent to {email_address}!")
+                except Exception as e:
+                    st.error(f"Failed to send email: {str(e)}")
         
-# Inside the export_tab2 section, replace the existing code with this:
-            with export_tab2:
-                export_results_to_email(avg_score,rating,st.session_state.skills,st.session_state.interview_date)
+        st.subheader("Or Download Results")
+        export_format = st.radio("Download Format", ["Markdown", "JSON"])
+        if st.button("Download Interview Results"):
+            if export_format == "Markdown":
+                st.markdown(get_download_link(export_text, "interview_results.md", "Download Interview Results"), unsafe_allow_html=True)
+            else:
+                export_data = {
+                    "date": st.session_state.interview_date,
+                    "overall_score": avg_score,
+                    "rating": rating,
+                    "skills": st.session_state.skills,
+                    "questions": []
+                }
+                for i, q in enumerate(st.session_state.questions):
+                    if q['question'] in st.session_state.evaluations:
+                        data = st.session_state.evaluations[q['question']]
+                        export_data["questions"].append({
+                            "question_number": i+1,
+                            "question_text": q['question'],
+                            "answer": data['answer'],
+                            "score": data['evaluation'].get('score', 0),
+                            "feedback": data['evaluation'].get('feedback', ''),
+                            "missing_concepts": data['evaluation'].get('missing_concepts', [])
+                        })
+                json_str = json.dumps(export_data, indent=2)
+                st.markdown(get_download_link(json_str, "interview_results.json", "Download Interview Results (JSON)"), unsafe_allow_html=True)
