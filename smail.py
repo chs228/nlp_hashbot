@@ -1,3 +1,20 @@
+import re
+import streamlit as st
+import io
+import base64
+import json
+import requests
+import os
+import random
+from datetime import datetime
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
+import markdown
+import pdfkit
+# from smail import export_results_to_email
+
 def generate_interview_results_pdf(interview_data):
     """Generate a clean PDF with interview results - no markdown involved."""
     try:
