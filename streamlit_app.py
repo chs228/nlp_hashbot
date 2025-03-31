@@ -25,6 +25,7 @@ try:
 except ImportError:
     st.error("python-docx is not installed. Please install it with: pip install python-docx")
 
+
 # Define skills dictionary
 COMMON_SKILLS = {
     'programming': ['python', 'java', 'javascript', 'html', 'css', 'c++', 'c#', 'ruby', 'php', 'sql', 'r'],
