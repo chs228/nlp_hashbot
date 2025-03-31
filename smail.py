@@ -129,7 +129,7 @@ def generate_interview_results_pdf(interview_data):
         st.error(f"Error generating PDF: {str(e)}")
         return None
 
-def export_results_to_email(avg_score,rating,st.session_state.skills,st.session_state.interview_date)
+def export_results_to_email(avg_score,rating,skills,interview_date)
     recipient_email = st.text_input("Recipient Email")
     email_subject = st.text_input("Email Subject", f"Technical Interview Results - {st.session_state.interview_date}")
     
