@@ -4,4 +4,4 @@ PyPDF2
 python-docx
 markdown
 pdfkit
-wkhtmltopdf
+reportlab
