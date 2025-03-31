@@ -3,6 +3,7 @@ from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from io import BytesIO
+import streamlit as st
 
 def generate_interview_results_pdf(interview_data):
     """Generate a PDF with interview results using ReportLab (no external dependencies)."""
