@@ -7,6 +7,12 @@ import requests
 import os
 import random
 from datetime import datetime
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
+import markdown
+import pdfkit
 
 # For PDF and DOCX processing
 try:
@@ -18,6 +24,76 @@ try:
     import docx
 except ImportError:
     st.error("python-docx is not installed. Please install it with: pip install python-docx")
+def generate_pdf_from_markdown(markdown_text):
+    """Convert markdown to PDF using pdfkit."""
+    try:
+        # Convert markdown to HTML
+        html = markdown.markdown(markdown_text)
+        
+        # Add basic styling
+        styled_html = f"""
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 40px; }}
+                h1 {{ color: #2C3E50; }}
+                h2 {{ color: #3498DB; margin-top: 20px; }}
+                h3 {{ color: #16A085; }}
+                .score {{ font-weight: bold; }}
+                hr {{ border: 1px solid #eee; }}
+            </style>
+        </head>
+        <body>
+            {html}
+        </body>
+        </html>
+        """
+        
+        # Convert HTML to PDF
+        pdf = pdfkit.from_string(styled_html, False)
+        return pdf
+    except Exception as e:
+        st.error(f"Error generating PDF: {str(e)}")
+        st.info("Make sure you have wkhtmltopdf installed: https://wkhtmltopdf.org/downloads.html")
+        return None
+
+def send_email(recipient_email, subject, body_text, attachment=None, attachment_name=None):
+    """Send an email with optional attachment."""
+    try:
+        # Get email credentials from environment variables or secrets
+        smtp_server = os.environ.get("SMTP_SERVER", st.secrets.get("SMTP_SERVER", "smtp.gmail.com"))
+        smtp_port = int(os.environ.get("SMTP_PORT", st.secrets.get("SMTP_PORT", "587")))
+        sender_email = os.environ.get("SENDER_EMAIL", st.secrets.get("SENDER_EMAIL", ""))
+        sender_password = os.environ.get("SENDER_PASSWORD", st.secrets.get("SENDER_PASSWORD", ""))
+        
+        if not sender_email or not sender_password:
+            return False, "Email credentials not configured. Please check settings."
+        
+        # Create message
+        msg = MIMEMultipart()
+        msg['From'] = sender_email
+        msg['To'] = recipient_email
+        msg['Subject'] = subject
+        
+        # Attach text body
+        msg.attach(MIMEText(body_text, 'plain'))
+        
+        # Attach PDF if provided
+        if attachment and attachment_name:
+            attachment_part = MIMEApplication(attachment, Name=attachment_name)
+            attachment_part['Content-Disposition'] = f'attachment; filename="{attachment_name}"'
+            msg.attach(attachment_part)
+        
+        # Connect to server and send
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(sender_email, sender_password)
+            server.send_message(msg)
+        
+        return True, "Email sent successfully!"
+    
+    except Exception as e:
+        return False, f"Failed to send email: {str(e)}"
 
 # Define skills dictionary
 COMMON_SKILLS = {
