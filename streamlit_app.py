@@ -13,7 +13,7 @@ from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 import markdown
 import pdfkit
-
+from email import export_results_to_email
 # For PDF and DOCX processing
 try:
     import PyPDF2
@@ -660,76 +660,4 @@ elif st.session_state.current_step == 3:
         
 # Inside the export_tab2 section, replace the existing code with this:
             with export_tab2:
-                st.info("Send the interview results as a PDF via email")
-                
-                recipient_email = st.text_input("Recipient Email")
-                email_subject = st.text_input("Email Subject", f"Technical Interview Results - {st.session_state.interview_date}")
-                
-                if st.button("Send Results via Email"):
-                    if recipient_email:
-                        # Generate plain text for the PDF (no HTML)
-                        export_text = f"""
-            TECHNICAL INTERVIEW RESULTS
-            ==========================
-            Date: {st.session_state.interview_date}
-            Overall Score: {avg_score:.1f}/100
-            Rating: {rating}
-            
-            EXTRACTED SKILLS
-            --------------
-            """
-                        # Add skills section
-                        for category, skill_list in st.session_state.skills.items():
-                            export_text += f"\n{category.capitalize()}: "
-                            export_text += ", ".join(skill_list)
-                        
-                        export_text += "\n\nINTERVIEW QUESTIONS AND EVALUATIONS\n"
-                        
-                        # Add each question and evaluation
-                        for i, q in enumerate(st.session_state.questions):
-                            if q['question'] in st.session_state.evaluations:
-                                data = st.session_state.evaluations[q['question']]
-                                evaluation = data["evaluation"]
-                                export_text += f"\n\nQuestion {i+1}: {q['question']}\n"
-                                export_text += f"Answer: {data['answer']}\n"
-                                export_text += f"Score: {evaluation.get('score', 'N/A')}/100\n"
-                                export_text += f"Feedback: {evaluation.get('feedback', 'No feedback available')}\n"
-                                
-                                missing = evaluation.get('missing_concepts', [])
-                                if missing:
-                                    export_text += "Missing concepts: "
-                                    export_text += ", ".join(missing)
-                                export_text += "\n-----------------------"
-                        
-                        # Generate PDF
-                        pdf_data = generate_pdf_from_markdown(export_text)
-                        
-                        if pdf_data:
-                            # Simple email body
-                            email_body = f"""
-            Technical Interview Results Summary
-            
-            Date: {st.session_state.interview_date}
-            Overall Score: {avg_score:.1f}/100
-            Rating: {rating}
-            
-            The complete interview results are attached as a PDF.
-            """
-                            
-                            # Send email with PDF attachment
-                            success, message = send_email(
-                                recipient_email, 
-                                email_subject, 
-                                email_body,
-                                pdf_data,
-                                "interview_results.pdf"
-                            )
-                            
-                            if success:
-                                st.success(message)
-                            else:
-                                st.error(message)
-                        else:
-                            st.error("Failed to generate PDF. Please check that wkhtmltopdf is installed.")
-                    else:
-                        st.error("Please enter a recipient email address")
+                export_results_to_email()
