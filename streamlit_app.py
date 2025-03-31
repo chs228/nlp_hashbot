@@ -13,7 +13,7 @@ from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 import markdown
 import pdfkit
-from email import export_results_to_email
+from smail import export_results_to_email
 # For PDF and DOCX processing
 try:
     import PyPDF2
