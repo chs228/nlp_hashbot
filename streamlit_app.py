@@ -6,16 +6,9 @@ import PyPDF2
 import docx
 import streamlit as st
 
-# Download necessary NLTK resources
-try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    nltk.download('punkt')
-    
-try:
-    nltk.data.find('corpora/stopwords')
-except LookupError:
-    nltk.download('stopwords')
+# Ensure necessary NLTK resources are available
+nltk.download('punkt')
+nltk.download('stopwords')
 
 # List of common skills to look for in resumes
 COMMON_SKILLS = {
@@ -28,46 +21,30 @@ COMMON_SKILLS = {
 }
 
 def extract_text_from_pdf(pdf_file):
-    """Extract text from a PDF file."""
+    """Extract text from a PDF file, handling empty pages."""
     pdf_reader = PyPDF2.PdfReader(pdf_file)
     text = ""
     for page in pdf_reader.pages:
-        text += page.extract_text()
-    return text
+        page_text = page.extract_text()
+        if page_text:
+            text += page_text + "\n"
+    return text if text else "Could not extract text from PDF."
 
 def extract_text_from_docx(docx_file):
     """Extract text from a DOCX file."""
     doc = docx.Document(docx_file)
-    text = ""
-    for paragraph in doc.paragraphs:
-        text += paragraph.text + "\n"
-    return text
+    return "\n".join([paragraph.text for paragraph in doc.paragraphs])
 
 def extract_skills(text):
     """Extract skills from text based on predefined skill lists."""
     text = text.lower()
-    
-    # Tokenize the text
     tokens = word_tokenize(text)
-    
-    # Remove stop words
     stop_words = set(stopwords.words('english'))
     filtered_tokens = [w for w in tokens if w.isalnum() and w not in stop_words]
     
-    # Extract skills
     identified_skills = {}
-    
     for category, skill_list in COMMON_SKILLS.items():
-        found_skills = []
-        
-        # Single word skills
-        for skill in skill_list:
-            if " " not in skill and skill in filtered_tokens:
-                found_skills.append(skill)
-            # Multi-word skills
-            elif " " in skill and skill in text:
-                found_skills.append(skill)
-                
+        found_skills = [skill for skill in skill_list if skill in text]
         if found_skills:
             identified_skills[category] = found_skills
     
@@ -75,53 +52,40 @@ def extract_skills(text):
 
 def generate_questions(skills):
     """Generate questions based on identified skills."""
-    questions = []
-    
-    # General questions
-    questions.append("Could you tell me more about your experience?")
-    questions.append("What are you looking for in your next role?")
-    
-    # Skill-specific questions
+    questions = [
+        "Could you tell me more about your experience?",
+        "What are you looking for in your next role?"
+    ]
     for category, skill_list in skills.items():
-        if category == 'programming' and skill_list:
-            questions.append(f"I see you have experience with {', '.join(skill_list[:3])}. Which one are you most proficient in?")
-        
-        if category == 'frameworks' and skill_list:
-            questions.append(f"Could you share a project where you used {skill_list[0]}?")
-        
-        if category == 'databases' and skill_list:
+        if category == 'programming':
+            questions.append(f"Which programming language are you most proficient in: {', '.join(skill_list[:3])}?")
+        if category == 'frameworks':
+            questions.append(f"Can you describe a project where you used {skill_list[0]}?")
+        if category == 'databases':
             questions.append(f"How experienced are you with {', '.join(skill_list)}?")
-        
-        if category == 'cloud' and skill_list:
-            questions.append(f"Have you worked with {skill_list[0]} in a production environment?")
-        
-        if category == 'soft_skills' and skill_list:
-            questions.append("Can you give an example of how you've demonstrated leadership in your previous roles?")
-    
+        if category == 'cloud':
+            questions.append(f"Have you worked with {skill_list[0]} in production?")
+        if category == 'soft_skills':
+            questions.append("Can you give an example of demonstrating leadership?")
     return questions
 
 # Streamlit App
 st.title("Resume Processing Chatbot")
 
-# Step 1: Upload Resume
 st.header("Step 1: Upload Resume")
 uploaded_file = st.file_uploader("Choose a resume file", type=["pdf", "docx", "txt"])
 
 if uploaded_file is not None:
     st.success("File successfully uploaded!")
-    
-    # Extract text based on file type
     if uploaded_file.name.endswith('.pdf'):
         resume_text = extract_text_from_pdf(uploaded_file)
     elif uploaded_file.name.endswith('.docx'):
         resume_text = extract_text_from_docx(uploaded_file)
-    else:  # Assume it's a text file
-        resume_text = uploaded_file.read().decode()
+    else:
+        resume_text = uploaded_file.read().decode(errors="replace")
     
-    # Step 2: Extract Skills
     st.header("Step 2: Extracted Skills")
     skills = extract_skills(resume_text)
-    
     if skills:
         for category, skill_list in skills.items():
             st.subheader(category.capitalize())
@@ -129,30 +93,22 @@ if uploaded_file is not None:
     else:
         st.warning("No specific skills were identified. Please check the resume format.")
     
-    # Step 3: Ask Questions
     st.header("Step 3: Interview Questions")
     questions = generate_questions(skills)
-    
     for i, question in enumerate(questions, 1):
         st.write(f"{i}. {question}")
     
-    # Simple chat interface
     st.header("Chat Interface")
-    st.info("You can use the questions above to interview the candidate.")
-    
+    st.info("Use the questions above to interview the candidate.")
     if "messages" not in st.session_state:
         st.session_state.messages = []
-    
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
-    
     if prompt := st.chat_input("Ask a question:"):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
-        
-        # Simple response (in a real app, this would be more sophisticated)
         with st.chat_message("assistant"):
             response = f"Please provide your answer to: {prompt}"
             st.markdown(response)
