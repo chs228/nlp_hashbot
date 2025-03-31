@@ -238,7 +238,7 @@ def extract_skills(text):
         if found_skills:
             identified_skills[category] = found_skills
     
-    return identified_skill
+    return identified_skills
 
 def generate_technical_questions(skills, max_questions=7):
     all_possible_questions = []
