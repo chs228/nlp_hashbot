@@ -111,7 +111,6 @@ def generate_interview_results_pdf(interview_data):
         </body>
         </html>
         """
-        """
         
         # Convert HTML to PDF
         options = {
