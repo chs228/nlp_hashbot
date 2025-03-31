@@ -3,3 +3,4 @@ nltk
 PyPDF2
 python-docx
 markdown
+pdfkit
