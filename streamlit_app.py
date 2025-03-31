@@ -143,7 +143,7 @@ with st.sidebar:
             st.session_state.questions = []
             st.session_state.messages = []
             st.session_state.current_step = 1
-            st.experimental_rerun()
+            st.rerun()  # Using st.rerun() instead of experimental_rerun
 
 # Step 1: Upload Resume
 if st.session_state.current_step == 1:
@@ -169,12 +169,12 @@ if st.session_state.current_step == 1:
             
             st.session_state.resume_text = resume_text
             st.session_state.current_step = 2
-            st.experimental_rerun()
+            st.rerun()  # Using st.rerun() instead of experimental_rerun
             
         elif text_input:
             st.session_state.resume_text = text_input
             st.session_state.current_step = 2
-            st.experimental_rerun()
+            st.rerun()  # Using st.rerun() instead of experimental_rerun
             
         else:
             st.error("Please upload a file or paste text to continue.")
@@ -213,13 +213,13 @@ elif st.session_state.current_step == 2:
                 st.session_state.skills[skill_category].append(new_skill)
         else:
             st.session_state.skills[skill_category] = [new_skill]
-        st.experimental_rerun()
+        st.rerun()  # Using st.rerun() instead of experimental_rerun
     
     if st.button("Continue to Questions"):
         st.session_state.current_step = 3
         # Generate questions based on skills
         st.session_state.questions = generate_questions(st.session_state.skills)
-        st.experimental_rerun()
+        st.rerun()  # Using st.rerun() instead of experimental_rerun
 
 # Step 3: Ask Questions
 elif st.session_state.current_step == 3:
@@ -234,7 +234,7 @@ elif st.session_state.current_step == 3:
     custom_question = st.text_input("Enter your question:")
     if st.button("Add Question") and custom_question:
         st.session_state.questions.append(custom_question)
-        st.experimental_rerun()
+        st.rerun()  # Using st.rerun() instead of experimental_rerun
     
     # Chat interface
     st.header("Chat Interface")
@@ -254,7 +254,7 @@ elif st.session_state.current_step == 3:
         # Simple response (in a real app, this would connect to a chatbot backend)
         response = "Please provide your answer to this question."
         st.session_state.messages.append({"role": "assistant", "content": response})
-        st.experimental_rerun()
+        st.rerun()  # Using st.rerun() instead of experimental_rerun
     
     # Export options
     st.subheader("Export Data")
