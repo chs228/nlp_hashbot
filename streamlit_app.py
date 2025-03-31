@@ -99,7 +99,7 @@ def validate_answer_with_gemini(question, answer, expected_keywords):
         }
     
     # Gemini API endpoint
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
     
     # Construct the prompt for Gemini
     prompt = f"""
