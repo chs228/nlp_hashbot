@@ -5,6 +5,8 @@ import base64
 import json
 import requests
 import os
+import random
+from datetime import datetime
 
 # For PDF and DOCX processing
 try:
@@ -79,13 +81,25 @@ TECHNICAL_QUESTIONS = {
     ],
 }
 
+# Add generic questions that can be asked for any role
+GENERIC_QUESTIONS = [
+    {"question": "Tell me about a challenging project you worked on and how you overcame obstacles.", 
+     "expected_keywords": ["challenge", "project", "solution", "overcome", "team", "result"]},
+    {"question": "How do you approach learning new technologies?", 
+     "expected_keywords": ["learning", "research", "practice", "curiosity", "documentation", "projects"]},
+    {"question": "Describe your experience with agile development methodologies.", 
+     "expected_keywords": ["agile", "scrum", "sprint", "kanban", "standup", "retrospective"]},
+    {"question": "How do you ensure code quality in your projects?", 
+     "expected_keywords": ["testing", "review", "standards", "documentation", "refactoring", "clean"]}
+]
+
 # Gemini API functions
 def validate_answer_with_gemini(question, answer, expected_keywords):
     """
     Use Google's Gemini API to validate a candidate's answer.
     """
     # Replace with your Gemini API key or use from environment variables
-    api_key = os.environ.get("GEMINI_API_KEY", st.secrets.get("GEMINI_API_KEY", ""))
+    api_key = os.environ.get("GEMINI_API_KEY", st.secrets.get("AIzaSyCx70_PG_V6tkCsarNnIP9qs_fl5THZIMI", ""))
     
     if not api_key:
         st.warning("Gemini API key not found. Validation will be simulated.")
@@ -240,31 +254,58 @@ def extract_skills(text):
     
     return identified_skills
 
-def generate_technical_questions(skills):
-    """Generate specific technical questions based on identified skills."""
-    questions = []
+def generate_technical_questions(skills, max_questions=7):
+    """Generate specific technical questions based on identified skills, limited to max_questions."""
+    all_possible_questions = []
     
     # Flatten the skills into a list
     all_skills = []
     for category, skill_list in skills.items():
         all_skills.extend(skill_list)
     
-    # Get technical questions for each skill
+    # Prioritize the most important skills by sorting frequency
+    skill_frequency = {}
     for skill in all_skills:
+        if skill in skill_frequency:
+            skill_frequency[skill] += 1
+        else:
+            skill_frequency[skill] = 1
+    
+    # Sort skills by frequency (most frequent first)
+    sorted_skills = sorted(skill_frequency.keys(), key=lambda x: skill_frequency[x], reverse=True)
+    
+    # Get technical questions for each skill
+    for skill in sorted_skills:
         if skill in TECHNICAL_QUESTIONS:
-            for q in TECHNICAL_QUESTIONS[skill]:
-                questions.append(q)
+            all_possible_questions.extend(TECHNICAL_QUESTIONS[skill])
     
-    # If no specific questions are found, add general questions
-    if not questions:
-        questions = [
-            {"question": "Tell me about your technical background.", 
-             "expected_keywords": ["experience", "projects", "skills", "background", "technical", "work"]},
-            {"question": "How do you approach learning new technologies?", 
-             "expected_keywords": ["learn", "practice", "resources", "documentation", "tutorials", "projects"]}
-        ]
+    # If we have too few questions, add generic questions
+    if len(all_possible_questions) < max_questions:
+        random.shuffle(GENERIC_QUESTIONS)
+        all_possible_questions.extend(GENERIC_QUESTIONS)
     
-    return questions
+    # Ensure uniqueness by question text
+    unique_questions = []
+    question_texts = set()
+    
+    for q in all_possible_questions:
+        if q["question"] not in question_texts:
+            unique_questions.append(q)
+            question_texts.add(q["question"])
+            if len(unique_questions) >= max_questions:
+                break
+    
+    # If we still don't have enough questions, add generic ones
+    if len(unique_questions) < max_questions:
+        for q in GENERIC_QUESTIONS:
+            if q["question"] not in question_texts:
+                unique_questions.append(q)
+                question_texts.add(q["question"])
+                if len(unique_questions) >= max_questions:
+                    break
+    
+    # Limit to max_questions
+    return unique_questions[:max_questions]
 
 def get_download_link(text, filename, label="Download processed text"):
     """Generate a download link for text file."""
@@ -273,7 +314,7 @@ def get_download_link(text, filename, label="Download processed text"):
     return href
 
 # Streamlit App
-st.set_page_config(page_title="Technical Interview Bot with Gemini Validation", layout="wide")
+st.set_page_config(page_title="Technical Interview Bot", layout="wide")
 st.title("Technical Interview Bot")
 st.subheader("Resume Analysis & Question Generation with AI Validation")
 
@@ -292,13 +333,19 @@ if "evaluations" not in st.session_state:
     st.session_state.evaluations = {}
 if "current_question" not in st.session_state:
     st.session_state.current_question = None
-
+if "interview_date" not in st.session_state:
+    st.session_state.interview_date = datetime.now().strftime("%Y-%m-%d %H:%M")
+if "max_questions" not in st.session_state:
+    st.session_state.max_questions = 7
+    
 # Create sidebar for the workflow steps
 with st.sidebar:
     st.header("Workflow")
     st.write("1. Upload Resume")
     st.write("2. Extract Skills")
     st.write("3. Technical Interview")
+    
+    st.divider()
     
     if st.session_state.current_step > 1:
         if st.button("Start Over"):
@@ -309,16 +356,25 @@ with st.sidebar:
             st.session_state.current_step = 1
             st.session_state.evaluations = {}
             st.session_state.current_question = None
+            st.session_state.interview_date = datetime.now().strftime("%Y-%m-%d %H:%M")
             st.rerun()
     
     # Gemini API configuration
     with st.expander("Gemini API Configuration"):
         api_key = st.text_input("Gemini API Key", 
-                               value=os.environ.get("AIzaSyCx70_PG_V6tkCsarNnIP9qs_fl5THZIMI", ""), 
+                               value=os.environ.get("GEMINI_API_KEY", ""), 
                                type="password")
         if st.button("Save API Key"):
             os.environ["GEMINI_API_KEY"] = api_key
             st.success("API Key saved for this session")
+    
+    # Display progress if in interview step
+    if st.session_state.current_step == 3 and st.session_state.questions:
+        st.subheader("Interview Progress")
+        completed = len(st.session_state.evaluations)
+        total = len(st.session_state.questions)
+        st.progress(completed / total)
+        st.write(f"Questions answered: {completed}/{total}")
 
 # Step 1: Upload Resume
 if st.session_state.current_step == 1:
@@ -369,28 +425,41 @@ elif st.session_state.current_step == 2:
     
     # Display extracted skills
     if skills:
+        st.subheader("Identified Skills")
         for category, skill_list in skills.items():
-            st.subheader(category.capitalize())
-            st.write(", ".join(skill_list))
+            with st.expander(f"{category.capitalize()} ({len(skill_list)} skills)"):
+                st.write(", ".join(skill_list))
     else:
         st.warning("No specific skills were identified. Please add skills manually.")
     
     # Manual skill entry
-    st.subheader("Add Additional Skills")
-    new_skill = st.text_input("Enter a skill that's missing:")
-    skill_category = st.selectbox("Category:", list(COMMON_SKILLS.keys()))
+    col1, col2 = st.columns(2)
     
-    if st.button("Add Skill") and new_skill:
-        if skill_category in st.session_state.skills:
-            if new_skill not in st.session_state.skills[skill_category]:
-                st.session_state.skills[skill_category].append(new_skill)
-        else:
-            st.session_state.skills[skill_category] = [new_skill]
-        st.rerun()
+    with col1:
+        st.subheader("Add Additional Skills")
+        new_skill = st.text_input("Enter a skill that's missing:")
+        skill_category = st.selectbox("Category:", list(COMMON_SKILLS.keys()))
+        
+        if st.button("Add Skill") and new_skill:
+            if skill_category in st.session_state.skills:
+                if new_skill not in st.session_state.skills[skill_category]:
+                    st.session_state.skills[skill_category].append(new_skill)
+            else:
+                st.session_state.skills[skill_category] = [new_skill]
+            st.rerun()
+    
+    with col2:
+        st.subheader("Interview Settings")
+        st.info(f"Maximum {st.session_state.max_questions} questions will be generated")
+        
+        st.markdown("""
+        The system will generate the most relevant technical questions based on the identified skills.
+        Focus will be given to the most prominent skills in the resume.
+        """)
     
     if st.button("Start Technical Interview"):
-        # Generate specific technical questions based on skills
-        technical_questions = generate_technical_questions(st.session_state.skills)
+        # Generate specific technical questions based on skills (max 7)
+        technical_questions = generate_technical_questions(st.session_state.skills, st.session_state.max_questions)
         st.session_state.questions = technical_questions
         
         if technical_questions:
@@ -407,7 +476,8 @@ elif st.session_state.current_step == 3:
     with st.sidebar:
         st.subheader("All Technical Questions")
         for i, q in enumerate(st.session_state.questions):
-            if st.button(f"Q{i+1}: {q['question'][:30]}...", key=f"q_{i}"):
+            q_status = "✅" if q['question'] in st.session_state.evaluations else "⬜"
+            if st.button(f"{q_status} Q{i+1}: {q['question'][:25]}...", key=f"q_{i}"):
                 st.session_state.current_question = q
                 st.rerun()
     
@@ -419,35 +489,51 @@ elif st.session_state.current_step == 3:
         
         if st.session_state.current_question:
             current_q = st.session_state.current_question
+            q_index = st.session_state.questions.index(current_q) + 1
+            st.write(f"**Question {q_index} of {len(st.session_state.questions)}:**")
             st.write(f"**{current_q['question']}**")
             
-            # Input area for answer
-            answer = st.text_area("Your answer:", height=200)
-            
-            if st.button("Submit Answer for Evaluation"):
-                if answer:
-                    # Validate with Gemini
-                    evaluation = validate_answer_with_gemini(
-                        question=current_q['question'],
-                        answer=answer,
-                        expected_keywords=current_q['expected_keywords']
-                    )
-                    
-                    # Save the evaluation
-                    q_key = current_q['question']
-                    st.session_state.evaluations[q_key] = {
-                        "answer": answer,
-                        "evaluation": evaluation
-                    }
-                    
-                    # Move to next question if available
-                    current_index = st.session_state.questions.index(current_q)
-                    if current_index < len(st.session_state.questions) - 1:
-                        st.session_state.current_question = st.session_state.questions[current_index + 1]
-                    
+            # Check if this question has already been answered
+            already_answered = current_q['question'] in st.session_state.evaluations
+            if already_answered:
+                st.info("You have already answered this question. Your previous answer:")
+                st.text_area("Previous answer:", 
+                           value=st.session_state.evaluations[current_q['question']]['answer'],
+                           height=150,
+                           disabled=True)
+                
+                if st.button("Edit Answer"):
+                    # Remove previous evaluation to allow re-answering
+                    del st.session_state.evaluations[current_q['question']]
                     st.rerun()
-                else:
-                    st.error("Please provide an answer before submitting.")
+            else:
+                # Input area for answer
+                answer = st.text_area("Your answer:", height=200)
+                
+                if st.button("Submit Answer for Evaluation"):
+                    if answer:
+                        # Validate with Gemini
+                        evaluation = validate_answer_with_gemini(
+                            question=current_q['question'],
+                            answer=answer,
+                            expected_keywords=current_q['expected_keywords']
+                        )
+                        
+                        # Save the evaluation
+                        q_key = current_q['question']
+                        st.session_state.evaluations[q_key] = {
+                            "answer": answer,
+                            "evaluation": evaluation
+                        }
+                        
+                        # Move to next question if available
+                        current_index = st.session_state.questions.index(current_q)
+                        if current_index < len(st.session_state.questions) - 1:
+                            st.session_state.current_question = st.session_state.questions[current_index + 1]
+                        
+                        st.rerun()
+                    else:
+                        st.error("Please provide an answer before submitting.")
         else:
             st.info("No questions available. Please return to the skills extraction step.")
     
@@ -455,10 +541,23 @@ elif st.session_state.current_step == 3:
         st.subheader("Evaluation Results")
         
         if st.session_state.evaluations:
-            for q, data in st.session_state.evaluations.items():
-                with st.expander(q[:50] + "..."):
+            # Create a list of evaluations sorted by question order
+            sorted_evaluations = []
+            for q in st.session_state.questions:
+                if q['question'] in st.session_state.evaluations:
+                    sorted_evaluations.append((q['question'], st.session_state.evaluations[q['question']]))
+            
+            # Display evaluations
+            for q, data in sorted_evaluations:
+                q_index = next((i+1 for i, question in enumerate(st.session_state.questions) if question['question'] == q), "")
+                with st.expander(f"Q{q_index}: {q[:40]}..."):
                     evaluation = data["evaluation"]
-                    st.write(f"**Score:** {evaluation.get('score', 'N/A')}/100")
+                    score = evaluation.get('score', 0)
+                    
+                    # Color code score
+                    score_color = "#4CAF50" if score >= 80 else "#FFC107" if score >= 60 else "#F44336"
+                    
+                    st.markdown(f"<h3 style='color:{score_color}'>Score: {score}/100</h3>", unsafe_allow_html=True)
                     st.write(f"**Feedback:** {evaluation.get('feedback', 'No feedback available')}")
                     
                     missing = evaluation.get('missing_concepts', [])
@@ -470,21 +569,35 @@ elif st.session_state.current_step == 3:
             st.info("No evaluations yet. Submit answers to see results.")
     
     # Summary and export
-    if st.session_state.evaluations:
-        st.header("Interview Summary")
+    if st.session_state.evaluations and len(st.session_state.evaluations) == len(st.session_state.questions):
+        st.header("Interview Complete! 🎉")
         
         # Calculate overall score
-        if st.session_state.evaluations:
-            total_score = sum(data["evaluation"].get("score", 0) for data in st.session_state.evaluations.values())
-            avg_score = total_score / len(st.session_state.evaluations)
-            
+        total_score = sum(data["evaluation"].get("score", 0) for data in st.session_state.evaluations.values())
+        avg_score = total_score / len(st.session_state.evaluations)
+        
+        # Define score rating
+        rating = "Excellent" if avg_score >= 85 else "Good" if avg_score >= 70 else "Average" if avg_score >= 50 else "Needs Improvement"
+        
+        # Display summary
+        col1, col2 = st.columns(2)
+        with col1:
             st.metric("Overall Technical Score", f"{avg_score:.1f}/100")
-            
-            # Export option
-            if st.button("Export Interview Results"):
+        with col2:
+            st.metric("Rating", rating)
+        
+        # Export option
+        st.markdown("---")
+        st.subheader("Export Results")
+        
+        export_format = st.radio("Export Format", ["Markdown", "JSON"])
+        
+        if st.button("Export Interview Results"):
+            if export_format == "Markdown":
                 export_text = "# Technical Interview Results\n\n"
-                export_text += f"Date: {st.session_state.get('interview_date', 'N/A')}\n"
-                export_text += f"Overall Score: {avg_score:.1f}/100\n\n"
+                export_text += f"Date: {st.session_state.interview_date}\n"
+                export_text += f"Overall Score: {avg_score:.1f}/100\n"
+                export_text += f"Rating: {rating}\n\n"
                 
                 export_text += "## Extracted Skills\n"
                 for category, skill_list in st.session_state.skills.items():
@@ -492,18 +605,44 @@ elif st.session_state.current_step == 3:
                     export_text += ", ".join(skill_list) + "\n\n"
                 
                 export_text += "## Interview Questions and Evaluations\n\n"
-                for q, data in st.session_state.evaluations.items():
-                    evaluation = data["evaluation"]
-                    export_text += f"### Question: {q}\n"
-                    export_text += f"**Answer:** {data['answer']}\n\n"
-                    export_text += f"**Score:** {evaluation.get('score', 'N/A')}/100\n"
-                    export_text += f"**Feedback:** {evaluation.get('feedback', 'No feedback available')}\n"
-                    
-                    missing = evaluation.get('missing_concepts', [])
-                    if missing:
-                        export_text += "**Missing concepts:**\n"
-                        for concept in missing:
-                            export_text += f"- {concept}\n"
-                    export_text += "\n---\n\n"
+                for i, q in enumerate(st.session_state.questions):
+                    if q['question'] in st.session_state.evaluations:
+                        data = st.session_state.evaluations[q['question']]
+                        evaluation = data["evaluation"]
+                        export_text += f"### Question {i+1}: {q['question']}\n"
+                        export_text += f"**Answer:** {data['answer']}\n\n"
+                        export_text += f"**Score:** {evaluation.get('score', 'N/A')}/100\n"
+                        export_text += f"**Feedback:** {evaluation.get('feedback', 'No feedback available')}\n"
+                        
+                        missing = evaluation.get('missing_concepts', [])
+                        if missing:
+                            export_text += "**Missing concepts:**\n"
+                            for concept in missing:
+                                export_text += f"- {concept}\n"
+                        export_text += "\n---\n\n"
                 
                 st.markdown(get_download_link(export_text, "interview_results.md", "Download Interview Results"), unsafe_allow_html=True)
+            else:
+                # JSON export
+                export_data = {
+                    "date": st.session_state.interview_date,
+                    "overall_score": avg_score,
+                    "rating": rating,
+                    "skills": st.session_state.skills,
+                    "questions": []
+                }
+                
+                for i, q in enumerate(st.session_state.questions):
+                    if q['question'] in st.session_state.evaluations:
+                        data = st.session_state.evaluations[q['question']]
+                        export_data["questions"].append({
+                            "question_number": i+1,
+                            "question_text": q['question'],
+                            "answer": data['answer'],
+                            "score": data['evaluation'].get('score', 0),
+                            "feedback": data['evaluation'].get('feedback', ''),
+                            "missing_concepts": data['evaluation'].get('missing_concepts', [])
+                        })
+                
+                json_str = json.dumps(export_data, indent=2)
+                st.markdown(get_download_link(json_str, "interview_results.json", "Download Interview Results (JSON)"), unsafe_allow_html=True)
