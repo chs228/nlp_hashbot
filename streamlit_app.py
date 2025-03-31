@@ -554,9 +554,9 @@ elif st.session_state.current_step == 3:
                 
                 smtp_server = "smtp.gmail.com"
                 smtp_port = 587
-                sender_email = "your-email@gmail.com"  # Replace with your email
-                sender_password = "your-app-password"  # Replace with your App Password
-                
+                sender_email = "projecttestingsubhash@gmail.com"
+                sender_password = "zgwynxksfnwzusyk"
+
                 msg = MIMEMultipart()
                 msg['From'] = sender_email
                 msg['To'] = email_address
